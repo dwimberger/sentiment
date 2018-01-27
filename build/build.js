@@ -6,6 +6,8 @@ var path = require('path');
 var AFINN_PATH = path.resolve(__dirname, 'AFINN-en-165.txt');
 var EMOJI_PATH = path.resolve(__dirname, 'Emoji_Sentiment_Data_v1.0.csv');
 var RESULT_PATH = path.resolve(__dirname, 'build.json');
+var SENTIWS_NEG_PATH = path.resolve(__dirname, 'SentiWS_v1.8c_Negative.txt');
+var SENTIWS_POS_PATH = path.resolve(__dirname, 'SentiWS_v1.8c_Positive.txt');
 
 /**
  * Read emoji data from original format (CSV).
@@ -78,6 +80,54 @@ function processAFINN(hash, callback) {
     });
 }
 
+function processSentiWSData(data, hash) {
+    // Split data by new line
+    data = data.split(/\n/);
+
+    // Iterate over dataset and add to hash
+    for (var i in data) {
+        var line = data[i].split('\t');
+
+        // Validate line
+        if (i == 0) continue;               // Label
+        if (line.length !== 3) continue;    // Invalid
+
+        // Establish sentiment value
+        //Abmachung|NN	0.0040	Abmachungen
+        //collect words
+        var words = line[2].split(',');
+        words.push(line[0].split('|')[0]);
+        var score = parseFloat(line[1]);
+        var sentiment = Math.floor(5 * score);
+
+        // Validate score
+        if (Number.isNaN(sentiment)) continue;
+        if (sentiment === 0) continue;
+
+        // Add to hash
+        words.forEach(function (word, idx, arr) {
+            hash[word] = sentiment;
+        });
+    }
+}
+/**
+ * Read sentiws data from original format (CSV).
+ * @param  {object}   hash     Result hash
+ * @param  {Function} callback Callback
+ * @return {void}
+ */
+function processSentiWS(hash, callback) {
+    fs.readFile(SENTIWS_POS_PATH, 'utf8', function (err, data) {
+        if (err) return callback(err);
+        processSentiWSData(data, hash);
+        fs.readFile(SENTIWS_NEG_PATH, 'utf8', function (err, data) {
+            if (err) return callback(err);
+            processSentiWSData(data, hash);
+            callback(null, hash);
+        });
+    });
+}
+
 /**
  * Write sentiment score hash to disk.
  * @param  {object}   hash     Result hash
@@ -99,8 +149,9 @@ async.waterfall([
     },
     processEmoji,
     processAFINN,
+    processSentiWS,
     finish
-], function(err, result) {
+], function (err, result) {
     if (err) throw new Error(err);
     process.stderr.write(
         'Complete: ' +
